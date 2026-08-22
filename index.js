@@ -76,6 +76,61 @@ const legacyTicketTypeKeys = {
   pad: 'ped',
 };
 
+const termSections = {
+  titulo: {
+    label: 'Título',
+    emoji: '<a:verificadoroxo:1392020027825324063>',
+  },
+  aviso: {
+    label: 'Aviso inicial',
+    emoji: '<a:heartroxo:1381656173358616677>',
+  },
+  pagamento: {
+    label: 'Pagamento',
+    emoji: '<a:cartao1:1489401747553255506>',
+  },
+  pedidos: {
+    label: 'Pedidos e alterações',
+    emoji: '<a:estrelaroxa:1289596849400975400>',
+  },
+  prazo: {
+    label: 'Prazo',
+    emoji: '<a:seeven:1418738373232824471>',
+  },
+  entrega: {
+    label: 'Entrega e arquivos',
+    emoji: '<a:1261hackerbongocat:998685236772741200>',
+  },
+  cancelamento: {
+    label: 'Cancelamento e reembolso',
+    emoji: '<a:money:1489992851965087886>',
+  },
+  suporte: {
+    label: 'Suporte',
+    emoji: '<a:atencao:1014387424736059402>',
+  },
+  proibicoes: {
+    label: 'Proibições',
+    emoji: '<:block:1519108755604635738>',
+  },
+  divulgacao: {
+    label: 'Divulgação',
+    emoji: '<a:Camera:1386757335317352499>',
+  },
+  conduta: {
+    label: 'Conduta',
+    emoji: '<a:raio1:1489400858666991718>',
+  },
+  assinatura: {
+    label: 'Assinatura',
+    emoji: '<a:heartroxo:1381656173358616677>',
+  },
+  duvidas: {
+    label: 'Dúvidas',
+    emoji: '<a:interrogacao:1489990526349480018>',
+  },
+};
+
 function loadBotConfig() {
   try {
     return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -134,6 +189,10 @@ function equivalentTicketTypeKeys(typeKey) {
 
 function getTicketEmoji(guildId, typeKey) {
   return getGuildConfig(guildId).ticketEmojis?.[typeKey] || ticketTypes[typeKey].emoji;
+}
+
+function getTermEmoji(guildId, sectionKey) {
+  return getGuildConfig(guildId).termsEmojis?.[sectionKey] || termSections[sectionKey].emoji;
 }
 
 function parseComponentEmoji(emoji) {
@@ -220,57 +279,57 @@ function panelEmbed(guildId, imageUrl = process.env.PANEL_IMAGE_URL) {
   return embed;
 }
 
-function termsEmbed() {
+function termsEmbed(guildId) {
   return new EmbedBuilder()
     .setColor(0x8A5CF6)
     .setDescription(
       [
-        '<a:verificadoroxo:1392020027825324063> ・TERMOS — UNIVERSE STORE',
+        `${getTermEmoji(guildId, 'titulo')} ・TERMOS — UNIVERSE STORE`,
         '',
-        '<a:heartroxo:1381656173358616677> Ao realizar uma compra, você declara estar ciente e de acordo com os termos abaixo.',
+        `${getTermEmoji(guildId, 'aviso')} Ao realizar uma compra, você declara estar ciente e de acordo com os termos abaixo.`,
         '',
-        '<a:cartao1:1489401747553255506> PAGAMENTO',
+        `${getTermEmoji(guildId, 'pagamento')} PAGAMENTO`,
         '• A produção inicia somente após a confirmação do pagamento e envio do comprovante.',
         '• Confira os dados antes de pagar. Não nos responsabilizamos por pagamentos enviados incorretamente.',
         '• Alterações fora do pedido original poderão gerar custos adicionais.',
         '',
-        '<a:estrelaroxa:1289596849400975400> PEDIDOS & ALTERAÇÕES',
+        `${getTermEmoji(guildId, 'pedidos')} PEDIDOS & ALTERAÇÕES`,
         '• Envie todas as referências e informações necessárias antes do início da produção.',
         '• Alterações que mudem o pedido original poderão ser cobradas.',
         '• Erros causados pela Universe Store serão corrigidos sem custo.',
         '',
-        '<a:seeven:1418738373232824471> PRAZO',
+        `${getTermEmoji(guildId, 'prazo')} PRAZO`,
         '• O prazo será informado no ticket após a confirmação do pagamento.',
         '• O prazo começa após o pagamento e recebimento de todas as informações necessárias.',
         '• Imprevistos que alterem o prazo serão comunicados ao cliente.',
         '',
-        '<a:1261hackerbongocat:998685236772741200> ENTREGA & ARQUIVOS',
+        `${getTermEmoji(guildId, 'entrega')} ENTREGA & ARQUIVOS`,
         '• Após receber o produto, faça o download e mantenha um backup.',
         '• Não garantimos reenvio de arquivos perdidos pelo cliente.',
         '• Problemas causados por alterações do cliente/terceiros podem invalidar o suporte.',
         '',
-        '<a:money:1489992851965087886> CANCELAMENTO & REEMBOLSO',
+        `${getTermEmoji(guildId, 'cancelamento')} CANCELAMENTO & REEMBOLSO`,
         '• Após o início da produção, o cancelamento poderá não gerar reembolso.',
         '• Problemas comprovadamente causados pela Universe Store serão analisados para correção ou substituição.',
         '',
-        '<a:atencao:1014387424736059402>  SUPORTE',
+        `${getTermEmoji(guildId, 'suporte')}  SUPORTE`,
         '• Todo atendimento deve ser feito pelo ticket do pedido.',
         '• Evite chamar a equipe no privado sobre compras.',
         '• Tickets são privados e destinados ao cliente responsável.',
         '',
-        '<:block:1519108755604635738>  PROIBIÇÕES',
+        `${getTermEmoji(guildId, 'proibicoes')}  PROIBIÇÕES`,
         '• É proibido revender, compartilhar, redistribuir ou disponibilizar os arquivos sem autorização.',
         '• Não é permitida a remoção de créditos ou utilização do trabalho como autoria própria.',
         '',
-        '<a:Camera:1386757335317352499>  DIVULGAÇÃO',
+        `${getTermEmoji(guildId, 'divulgacao')}  DIVULGAÇÃO`,
         '• A Universe Store poderá utilizar imagens/vídeos dos trabalhos para divulgação, salvo acordo prévio.',
         '',
-        '<a:raio1:1489400858666991718> CONDUTA',
+        `${getTermEmoji(guildId, 'conduta')} CONDUTA`,
         '• Respeito à equipe é obrigatório.',
         '• Fraudes, comprovantes falsos, chargebacks indevidos ou comportamento abusivo poderão resultar em bloqueio.',
         '',
-        '<a:heartroxo:1381656173358616677>  Universe Store — Transformando sua ideia em realidade.',
-        '<a:interrogacao:1489990526349480018> Dúvidas? Abra um ticket antes de realizar sua compra.',
+        `${getTermEmoji(guildId, 'assinatura')}  Universe Store — Transformando sua ideia em realidade.`,
+        `${getTermEmoji(guildId, 'duvidas')} Dúvidas? Abra um ticket antes de realizar sua compra.`,
       ].join('\n')
     );
 }
@@ -363,9 +422,15 @@ async function getClosedTicketsCategory(guild, staffRoleId, closedCategoryId) {
   });
 }
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Bot conectado como ${readyClient.user.tag}`);
   console.log('Use /painel no canal em que deseja publicar o menu de tickets.');
+
+  try {
+    await registerCommands(readyClient);
+  } catch (error) {
+    console.error('Erro ao registrar comandos:', error);
+  }
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -479,11 +544,54 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const termsMessage = await termsChannel.send({
-        embeds: [termsEmbed()],
+        embeds: [termsEmbed(interaction.guildId)],
       });
 
       return interaction.reply({
         content: `✅ Termos publicados: ${termsMessage.url}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    // /emoji-terms
+    if (interaction.isChatInputCommand() && interaction.commandName === 'emoji-terms') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+          content: '❌ Apenas administradores podem configurar emojis dos termos.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (!interaction.inGuild()) {
+        return interaction.reply({
+          content: '❌ Use este comando em um servidor.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const sectionKey = interaction.options.getString('secao', true);
+      const emoji = interaction.options.getString('emoji', true).trim();
+      const section = termSections[sectionKey];
+
+      if (!section) {
+        return interaction.reply({
+          content: '❌ Seção de termos inválida.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      updateGuildConfig(interaction.guildId, {
+        termsEmojis: {
+          ...(getGuildConfig(interaction.guildId).termsEmojis || {}),
+          [sectionKey]: emoji,
+        },
+      });
+
+      return interaction.reply({
+        content: [
+          `✅ Emoji de **${section.label}** configurado para ${emoji}.`,
+          'Publique os termos novamente com `/terms` para a mensagem fixa usar o novo emoji.',
+        ].join('\n'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -952,10 +1060,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Registra os comandos. Se GUILD_ID existir, registra no servidor informado e aparece quase na hora.
-async function registerCommands(clientId) {
+// Registra os comandos em cada servidor onde o bot está conectado.
+// Isso faz os comandos aparecerem quase na hora e evita depender de GUILD_ID.
+async function registerCommands(readyClient) {
   const token = process.env.DISCORD_TOKEN;
-  const guildId = process.env.GUILD_ID;
 
   if (!token) {
     console.error('Configure DISCORD_TOKEN no arquivo .env antes de iniciar.');
@@ -1043,23 +1151,53 @@ async function registerCommands(clientId) {
           .setRequired(true)
       )
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName('emoji-terms')
+      .setDescription('Configura o emoji de uma seção dos termos.')
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+      .addStringOption((option) => {
+        const sectionOption = option
+          .setName('secao')
+          .setDescription('Seção dos termos que receberá o emoji.')
+          .setRequired(true);
+
+        for (const [value, section] of Object.entries(termSections)) {
+          sectionOption.addChoices({ name: section.label, value });
+        }
+
+        return sectionOption;
+      })
+      .addStringOption((option) =>
+        option
+          .setName('emoji')
+          .setDescription('Emoji unicode ou personalizado. Ex: 💜, <:nome:id> ou <a:nome:id>.')
+          .setRequired(true)
+      )
+      .toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(token);
+  const guildIds = readyClient.guilds.cache.map((guild) => guild.id);
 
-  const route = guildId
-    ? Routes.applicationGuildCommands(clientId, guildId)
-    : Routes.applicationCommands(clientId);
+  if (!guildIds.length) {
+    console.warn('Nenhum servidor encontrado para registrar comandos.');
+    return;
+  }
 
-  await rest.put(route, { body: commands });
+  for (const guildId of guildIds) {
+    await rest.put(Routes.applicationGuildCommands(readyClient.user.id, guildId), {
+      body: commands,
+    });
+  }
 
-  console.log('Comandos /painel, /terms, /boasvindas e /emoji-ticket registrados.');
+  console.log(
+    `Comandos /painel, /terms, /boasvindas, /emoji-ticket e /emoji-terms registrados em ${guildIds.length} servidor(es).`
+  );
 }
 
 (async () => {
   try {
     await client.login(process.env.DISCORD_TOKEN);
-    await registerCommands(client.user.id);
   } catch (error) {
     console.error('Erro ao iniciar o bot:', error);
   }
