@@ -28,16 +28,17 @@ const client = new Client({
 // STAFF_ROLE_ID = cargo que poderá ver/atender todos os tickets.
 // TICKET_CATEGORY_ID = categoria onde os tickets serão criados.
 // CLOSED_TICKET_CATEGORY_ID = opcional; categoria onde tickets fechados serão arquivados.
+// PANEL_IMAGE_URL = opcional; imagem pública exibida no painel de tickets.
 
 const ticketTypes = {
-  pad: {
-    label: 'Comprar PAD',
+  ped: {
+    label: 'Comprar PED',
     emoji: '🎭',
-    description: 'Orçamento e compra de PADs para GTA.',
-    prefix: 'pad',
-    title: '🎭 Ticket — Comprar PAD',
+    description: 'Orçamento e compra de PEDs para GTA.',
+    prefix: 'ped',
+    title: '🎭 Ticket — Comprar PED',
     message:
-      'Envie as referências e explique como você quer o PAD. Se possível, informe detalhes como masculino/feminino, roupas, cabelo e outras alterações.',
+      'Envie as referências e explique como você quer o PED. Se possível, informe detalhes como masculino/feminino, roupas, cabelo e outras alterações.',
   },
   cenario: {
     label: 'Cenários',
@@ -68,6 +69,10 @@ const ticketTypes = {
   },
 };
 
+const legacyTicketTypeKeys = {
+  pad: 'ped',
+};
+
 function safeName(name) {
   return name
     .toLowerCase()
@@ -85,8 +90,20 @@ function generateTicketId(prefix) {
   return `${prefix.toUpperCase()}-${timestamp}${random}`;
 }
 
+function resolveTicketTypeKey(typeKey) {
+  return legacyTicketTypeKeys[typeKey] ?? typeKey;
+}
+
+function equivalentTicketTypeKeys(typeKey) {
+  const legacyKeys = Object.entries(legacyTicketTypeKeys)
+    .filter(([, currentKey]) => currentKey === typeKey)
+    .map(([legacyKey]) => legacyKey);
+
+  return [typeKey, ...legacyKeys];
+}
+
 function panelEmbed() {
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🎫 Central de Atendimento')
     .setDescription(
@@ -95,7 +112,7 @@ function panelEmbed() {
         '',
         'Selecione abaixo o assunto que melhor corresponde ao seu atendimento.',
         '',
-        '🎭 **Comprar PAD** — orçamento e encomenda de PADs.',
+        '🎭 **Comprar PED** — orçamento e encomenda de PEDs.',
         '🏙️ **Cenários** — orçamento e encomenda de cenários.',
         '🛠️ **Suporte** — problemas, instalação e dúvidas.',
         '🤝 **Parcerias** — propostas de parceria.',
@@ -104,6 +121,12 @@ function panelEmbed() {
       ].join('\n')
     )
     .setFooter({ text: 'Escolha uma opção no menu abaixo.' });
+
+  if (process.env.PANEL_IMAGE_URL) {
+    embed.setImage(process.env.PANEL_IMAGE_URL);
+  }
+
+  return embed;
 }
 
 function panelComponents() {
@@ -225,7 +248,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-      const typeKey = interaction.values[0];
+      const typeKey = resolveTicketTypeKey(interaction.values[0]);
       const type = ticketTypes[typeKey];
       if (!type) return interaction.editReply('❌ Tipo de ticket inválido.');
 
@@ -255,10 +278,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const existing = guildChannels.find(
         (channel) => {
-          const topicPrefix = `ticket:${interaction.user.id}:${typeKey}`;
+          const topicPrefixes = equivalentTicketTypeKeys(typeKey).map(
+            (equivalentTypeKey) => `ticket:${interaction.user.id}:${equivalentTypeKey}`
+          );
+
           return (
             channel?.type === ChannelType.GuildText &&
-            (channel.topic === topicPrefix || channel.topic?.startsWith(`${topicPrefix}:`))
+            topicPrefixes.some(
+              (topicPrefix) =>
+                channel.topic === topicPrefix || channel.topic?.startsWith(`${topicPrefix}:`)
+            )
           );
         }
       );
@@ -460,9 +489,101 @@ client.on(Events.InteractionCreate, async (interaction) => {
       ]);
       await channel.setName(archivedName);
       await channel.setTopic(`closed-ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}`);
-      await channel.send(
-        `🔒 Ticket fechado por ${interaction.user}.${
+
+      const reopenButton = new ButtonBuilder()
+        .setCustomId('ticket_reopen')
+        .setLabel('Reabrir Ticket')
+        .setEmoji('🔓')
+        .setStyle(ButtonStyle.Success);
+
+      await channel.send({
+        content: `🔒 Ticket fechado por ${interaction.user}.${
           ticketId ? `\nID do Ticket: \`${ticketId}\`` : ''
+        }`,
+        components: [new ActionRowBuilder().addComponents(reopenButton)],
+      });
+    }
+
+    if (interaction.isButton() && interaction.customId === 'ticket_reopen') {
+      const channel = interaction.channel;
+      const guild = await fetchInteractionGuild(interaction);
+      const staffRoleId = process.env.STAFF_ROLE_ID;
+      const categoryId = process.env.TICKET_CATEGORY_ID;
+      const isStaff =
+        interaction.member.roles?.cache?.has(staffRoleId) ||
+        interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator);
+
+      if (!channel?.topic?.startsWith('closed-ticket:')) {
+        return interaction.reply({
+          content: '❌ Este canal não é um ticket fechado.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (!isStaff) {
+        return interaction.reply({
+          content: '❌ Apenas a equipe pode reabrir tickets.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (!guild || !staffRoleId) {
+        return interaction.reply({
+          content: '❌ Não consegui acessar o servidor ou o cargo da equipe para reabrir.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const [, ownerId, typeKey, ticketId] = channel.topic.split(':');
+      const openCategory = categoryId
+        ? await guild.channels.fetch(categoryId).catch(() => null)
+        : null;
+
+      await interaction.reply({
+        content: '🔓 Ticket sendo reaberto...',
+        flags: MessageFlags.Ephemeral,
+      });
+
+      if (openCategory?.type === ChannelType.GuildCategory) {
+        await channel.setParent(openCategory.id, { lockPermissions: false });
+      }
+
+      await channel.permissionOverwrites.set([
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+        },
+        {
+          id: ownerId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+          ],
+        },
+        {
+          id: staffRoleId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageMessages,
+          ],
+        },
+      ]);
+
+      if (channel.name.startsWith('fechado-')) {
+        await channel.setName(channel.name.replace(/^fechado-/, ''));
+      }
+
+      await channel.setTopic(`ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}`);
+      await channel.send(
+        `🔓 Ticket reaberto por ${interaction.user}.${
+          ticketId && ticketId !== 'sem-id' ? `\nID do Ticket: \`${ticketId}\`` : ''
         }`
       );
     }
