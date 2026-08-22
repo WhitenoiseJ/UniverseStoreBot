@@ -79,6 +79,12 @@ function safeName(name) {
     .slice(0, 40) || 'usuario';
 }
 
+function generateTicketId(prefix) {
+  const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
+  const random = Math.random().toString(36).toUpperCase().slice(2, 5);
+  return `${prefix.toUpperCase()}-${timestamp}${random}`;
+}
+
 function panelEmbed() {
   return new EmbedBuilder()
     .setColor(0x5865F2)
@@ -248,9 +254,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const existing = guildChannels.find(
-        (channel) =>
-          channel?.type === ChannelType.GuildText &&
-          channel.topic === `ticket:${interaction.user.id}:${typeKey}`
+        (channel) => {
+          const topicPrefix = `ticket:${interaction.user.id}:${typeKey}`;
+          return (
+            channel?.type === ChannelType.GuildText &&
+            (channel.topic === topicPrefix || channel.topic?.startsWith(`${topicPrefix}:`))
+          );
+        }
       );
 
       if (existing) {
@@ -259,7 +269,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         );
       }
 
-      const channelName = `${type.prefix}-${safeName(interaction.user.username)}`;
+      const ticketId = generateTicketId(type.prefix);
+      const channelName = `${ticketId.toLowerCase()}-${safeName(
+        interaction.user.username
+      )}`.slice(0, 100);
 
       const permissionOverwrites = [
         {
@@ -297,7 +310,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             categoryId && categoryId !== 'COLOQUE_O_ID_DA_CATEGORIA_DE_TICKETS'
               ? categoryId
               : undefined,
-          topic: `ticket:${interaction.user.id}:${typeKey}`,
+          topic: `ticket:${interaction.user.id}:${typeKey}:${ticketId}`,
           permissionOverwrites,
         })
         .catch((error) => {
@@ -313,7 +326,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const closeButton = new ButtonBuilder()
         .setCustomId('ticket_close')
-        .setLabel('Arquivar Ticket')
+        .setLabel('Fechar Ticket')
         .setEmoji('🔒')
         .setStyle(ButtonStyle.Danger);
 
@@ -323,12 +336,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setColor(0x57F287)
         .setTitle(type.title)
         .setDescription(
-          `Olá ${interaction.user}!\n\n${type.message}\n\nA equipe responderá assim que possível.`
+          `Olá ${interaction.user}!\n\n**ID do Ticket:** \`${ticketId}\`\n\n${type.message}\n\nA equipe responderá assim que possível.`
         )
         .setFooter({ text: `Aberto por ${interaction.user.username}` })
         .setTimestamp();
 
-      await interaction.editReply(`✅ Seu ticket foi criado: ${channel}`);
+      await interaction.editReply(`✅ Seu ticket foi criado: ${channel}\nID: \`${ticketId}\``);
 
       await channel
         .send({
@@ -369,8 +382,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const confirm = new ButtonBuilder()
         .setCustomId('ticket_delete_confirm')
-        .setLabel('Confirmar arquivamento')
-        .setEmoji('📦')
+        .setLabel('Confirmar fechamento')
+        .setEmoji('🔒')
         .setStyle(ButtonStyle.Danger);
 
       const cancel = new ButtonBuilder()
@@ -379,7 +392,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setStyle(ButtonStyle.Secondary);
 
       return interaction.reply({
-        content: 'Tem certeza de que deseja fechar e arquivar este ticket?',
+        content: 'Tem certeza de que deseja fechar este ticket?',
         components: [new ActionRowBuilder().addComponents(confirm, cancel)],
         flags: MessageFlags.Ephemeral,
       });
@@ -406,15 +419,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!guild || !staffRoleId) {
         return interaction.update({
-          content: '❌ Não consegui acessar o servidor ou o cargo da equipe para arquivar.',
+          content: '❌ Não consegui acessar o servidor ou o cargo da equipe para fechar.',
           components: [],
         });
       }
 
-      const [, ownerId, typeKey] = channel.topic.split(':');
+      const [, ownerId, typeKey, ticketId] = channel.topic.split(':');
 
       await interaction.update({
-        content: '🔒 Ticket sendo arquivado...',
+        content: '🔒 Ticket sendo fechado...',
         components: [],
       });
 
@@ -446,8 +459,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         },
       ]);
       await channel.setName(archivedName);
-      await channel.setTopic(`closed-ticket:${ownerId}:${typeKey || 'geral'}`);
-      await channel.send(`📦 Ticket arquivado por ${interaction.user}.`);
+      await channel.setTopic(`closed-ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}`);
+      await channel.send(
+        `🔒 Ticket fechado por ${interaction.user}.${
+          ticketId ? `\nID do Ticket: \`${ticketId}\`` : ''
+        }`
+      );
     }
   } catch (error) {
     console.error(error);
