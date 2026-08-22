@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
+
 const {
   Client,
   GatewayIntentBits,
@@ -27,6 +30,8 @@ const client = new Client({
 // DISCORD_TOKEN deve ficar no .env/Square Cloud por segurança.
 // As opções do painel são configuradas direto no comando /painel.
 // As demais variáveis são opcionais e servem como fallback para painéis/tickets antigos.
+
+const CONFIG_FILE = path.join(__dirname, 'bot-config.json');
 
 const ticketTypes = {
   ped: {
@@ -70,6 +75,33 @@ const ticketTypes = {
 const legacyTicketTypeKeys = {
   pad: 'ped',
 };
+
+function loadBotConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    return { guilds: {} };
+  }
+}
+
+function saveBotConfig(config) {
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+function getGuildConfig(guildId) {
+  const config = loadBotConfig();
+  return config.guilds[guildId] || {};
+}
+
+function updateGuildConfig(guildId, partialConfig) {
+  const config = loadBotConfig();
+  config.guilds[guildId] = {
+    ...(config.guilds[guildId] || {}),
+    ...partialConfig,
+  };
+  saveBotConfig(config);
+  return config.guilds[guildId];
+}
 
 function safeName(name) {
   return name
@@ -228,6 +260,27 @@ function termsEmbed() {
     );
 }
 
+function welcomeEmbed({ announcementsChannelId, imageUrl }) {
+  const announcementsText = announcementsChannelId ? `<#${announcementsChannelId}>` : '#📢・avisos';
+  const embed = new EmbedBuilder()
+    .setColor(0x8A5CF6)
+    .setTitle('|Bem-vindo(a)Universe Store')
+    .setDescription(
+      [
+        'Aqui você encontrará variados peds, totalmente do jeitinho que você sempre sonhou. Caso tenha dúvidas pode nos contatar <3',
+        '',
+        `📢 **Não se esqueça de sempre ficar atento na ${announcementsText}**`,
+      ].join('\n')
+    )
+    .setFooter({ text: 'Universe Store • © Todos os direitos reservados.' });
+
+  if (imageUrl) {
+    embed.setThumbnail(imageUrl);
+  }
+
+  return embed;
+}
+
 function panelComponents(config = {}) {
   const menu = new StringSelectMenuBuilder()
     .setCustomId(buildTicketSelectCustomId(config))
@@ -298,6 +351,31 @@ async function getClosedTicketsCategory(guild, staffRoleId, closedCategoryId) {
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Bot conectado como ${readyClient.user.tag}`);
   console.log('Use /painel no canal em que deseja publicar o menu de tickets.');
+});
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  const welcomeConfig = getGuildConfig(member.guild.id).welcome;
+  if (!welcomeConfig?.channelId) return;
+
+  const welcomeChannel = await member.guild.channels
+    .fetch(welcomeConfig.channelId)
+    .catch(() => null);
+
+  if (!welcomeChannel?.isTextBased() || !welcomeChannel.isSendable()) return;
+
+  await welcomeChannel
+    .send({
+      content: `${member}`,
+      embeds: [
+        welcomeEmbed({
+          announcementsChannelId: welcomeConfig.announcementsChannelId,
+          imageUrl: welcomeConfig.imageUrl,
+        }),
+      ],
+    })
+    .catch((error) => {
+      console.error('Erro ao enviar mensagem de boas-vindas:', error);
+    });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -391,6 +469,51 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       return interaction.reply({
         content: `✅ Termos publicados: ${termsMessage.url}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    // /boasvindas
+    if (interaction.isChatInputCommand() && interaction.commandName === 'boasvindas') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+          content: '❌ Apenas administradores podem configurar as boas-vindas.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (!interaction.inGuild()) {
+        return interaction.reply({
+          content: '❌ Use este comando em um servidor.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const welcomeChannel = interaction.options.getChannel('canal', true);
+      const announcementsChannel = interaction.options.getChannel('canal_avisos', true);
+      const imageUrl =
+        interaction.options.getString('imagem') ||
+        getGuildConfig(interaction.guildId).welcome?.imageUrl ||
+        process.env.PANEL_IMAGE_URL ||
+        null;
+
+      updateGuildConfig(interaction.guildId, {
+        welcome: {
+          channelId: welcomeChannel.id,
+          announcementsChannelId: announcementsChannel.id,
+          imageUrl,
+        },
+      });
+
+      return interaction.reply({
+        content: [
+          '✅ Boas-vindas configuradas.',
+          `Canal: ${welcomeChannel}`,
+          `Canal de avisos: ${announcementsChannel}`,
+          imageUrl ? `Imagem: ${imageUrl}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -820,6 +943,31 @@ async function registerCommands(clientId) {
       .setDescription('Publica os termos da Universe Store.')
       .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName('boasvindas')
+      .setDescription('Configura a mensagem automática de boas-vindas.')
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+      .addChannelOption((option) =>
+        option
+          .setName('canal')
+          .setDescription('Canal onde a mensagem de boas-vindas será enviada.')
+          .addChannelTypes(ChannelType.GuildText)
+          .setRequired(true)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName('canal_avisos')
+          .setDescription('Canal mencionado na mensagem de boas-vindas.')
+          .addChannelTypes(ChannelType.GuildText)
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('imagem')
+          .setDescription('URL pública da imagem/ícone das boas-vindas.')
+          .setRequired(false)
+      )
+      .toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(token);
@@ -830,7 +978,7 @@ async function registerCommands(clientId) {
 
   await rest.put(route, { body: commands });
 
-  console.log('Comandos /painel e /terms registrados.');
+  console.log('Comandos /painel, /terms e /boasvindas registrados.');
 }
 
 (async () => {

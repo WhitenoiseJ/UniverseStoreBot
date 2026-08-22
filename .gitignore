@@ -8,6 +8,7 @@ node_modules/
 
 # Logs and local tooling
 *.log
+bot-config.json
 .DS_Store
 Thumbs.db
 .vscode/
