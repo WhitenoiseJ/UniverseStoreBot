@@ -151,9 +151,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      return interaction.reply({
+      const panelChannel =
+        interaction.channel ??
+        (await interaction.client.channels.fetch(interaction.channelId).catch(() => null));
+
+      if (!panelChannel?.isTextBased() || !panelChannel.isSendable()) {
+        return interaction.reply({
+          content:
+            '❌ Não consegui enviar mensagens neste canal. Verifique se o bot tem permissão de Enviar Mensagens nele.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const panelMessage = await panelChannel.send({
         embeds: [panelEmbed()],
         components: panelComponents(),
+      });
+
+      return interaction.reply({
+        content: `✅ Painel fixo publicado: ${panelMessage.url}`,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
