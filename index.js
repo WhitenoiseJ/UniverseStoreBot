@@ -35,9 +35,9 @@ const CONFIG_FILE = path.join(__dirname, 'bot-config.json');
 
 const ticketTypes = {
   ped: {
-    label: 'Comprar PED',
+    label: 'Peds',
     emoji: '🎭',
-    description: 'Orçamento e compra de PEDs para GTA.',
+    description: 'Orçamento e encomenda de PEDs.',
     prefix: 'ped',
     title: '🎭 Ticket — Comprar PED',
     message:
@@ -188,7 +188,7 @@ function panelEmbed(imageUrl = process.env.PANEL_IMAGE_URL) {
         '',
         'Selecione abaixo o assunto que melhor corresponde ao seu atendimento.',
         '',
-        '🎭 **Comprar PED** — orçamento e encomenda de PEDs.',
+        '🎭 **Peds** — orçamento e encomenda de PEDs.',
         '🏙️ **Cenários** — orçamento e encomenda de cenários.',
         '🛠️ **Suporte** — problemas, instalação e dúvidas.',
         '🤝 **Parcerias** — propostas de parceria.',
