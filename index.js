@@ -11,6 +11,7 @@ const {
   ButtonStyle,
   EmbedBuilder,
   Events,
+  MessageFlags,
 } = require('discord.js');
 
 const client = new Client({
@@ -126,24 +127,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
         return interaction.reply({
           content: '❌ Apenas administradores podem publicar o painel.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
-      await interaction.channel.send({
+      if (!interaction.inGuild() || !interaction.channelId) {
+        return interaction.reply({
+          content: '❌ Use este comando em um canal do servidor.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const panelChannel = await interaction.guild.channels.fetch(interaction.channelId);
+      if (!panelChannel?.isTextBased() || !panelChannel.isSendable()) {
+        return interaction.reply({
+          content: '❌ Não consegui enviar mensagens neste canal.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      await panelChannel.send({
         embeds: [panelEmbed()],
         components: panelComponents(),
       });
 
       return interaction.reply({
         content: '✅ Painel de tickets publicado.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     // Seleção do tipo de ticket
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const typeKey = interaction.values[0];
       const type = ticketTypes[typeKey];
@@ -246,7 +262,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!channel?.topic?.startsWith('ticket:')) {
         return interaction.reply({
           content: '❌ Este canal não é um ticket.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -259,7 +275,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!isOwner && !isStaff) {
         return interaction.reply({
           content: '❌ Você não tem permissão para fechar este ticket.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
 
@@ -277,7 +293,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return interaction.reply({
         content: 'Tem certeza de que deseja fechar e apagar este ticket?',
         components: [new ActionRowBuilder().addComponents(confirm, cancel)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -311,7 +327,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction
         .reply({
           content: '❌ Ocorreu um erro ao executar essa ação.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => {});
     }
