@@ -151,25 +151,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const panelChannel = await interaction.client.channels
-        .fetch(interaction.channelId)
-        .catch(() => null);
-
-      if (!panelChannel?.isTextBased() || !panelChannel.isSendable()) {
-        return interaction.reply({
-          content: '❌ Não consegui enviar mensagens neste canal.',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      await panelChannel.send({
+      return interaction.reply({
         embeds: [panelEmbed()],
         components: panelComponents(),
-      });
-
-      return interaction.reply({
-        content: '✅ Painel de tickets publicado.',
-        flags: MessageFlags.Ephemeral,
       });
     }
 
