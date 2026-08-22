@@ -116,8 +116,16 @@ function panelComponents() {
 }
 
 async function fetchInteractionGuild(interaction) {
+  if (interaction.guild) return interaction.guild;
+
+  const channel = interaction.channelId
+    ? await interaction.client.channels.fetch(interaction.channelId).catch(() => null)
+    : null;
+
+  if (channel?.guild) return channel.guild;
   if (!interaction.guildId) return null;
-  return interaction.guild ?? interaction.client.guilds.fetch(interaction.guildId);
+
+  return interaction.client.guilds.fetch(interaction.guildId).catch(() => null);
 }
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -143,15 +151,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const guild = await fetchInteractionGuild(interaction);
-      if (!guild) {
-        return interaction.reply({
-          content: '❌ Não consegui encontrar o servidor deste comando.',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
+      const panelChannel = await interaction.client.channels
+        .fetch(interaction.channelId)
+        .catch(() => null);
 
-      const panelChannel = await guild.channels.fetch(interaction.channelId);
       if (!panelChannel?.isTextBased() || !panelChannel.isSendable()) {
         return interaction.reply({
           content: '❌ Não consegui enviar mensagens neste canal.',
