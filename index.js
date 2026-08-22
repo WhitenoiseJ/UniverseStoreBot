@@ -24,11 +24,9 @@ const client = new Client({
 // =========================
 // CONFIGURAÇÃO
 // =========================
-// Depois de criar os cargos/categorias no Discord, coloque os IDs no .env.
-// STAFF_ROLE_ID = cargo que poderá ver/atender todos os tickets.
-// TICKET_CATEGORY_ID = categoria onde os tickets serão criados.
-// CLOSED_TICKET_CATEGORY_ID = opcional; categoria onde tickets fechados serão arquivados.
-// PANEL_IMAGE_URL = opcional; imagem pública exibida no painel de tickets.
+// DISCORD_TOKEN deve ficar no .env/Square Cloud por segurança.
+// As opções do painel são configuradas direto no comando /painel.
+// As demais variáveis são opcionais e servem como fallback para painéis/tickets antigos.
 
 const ticketTypes = {
   ped: {
@@ -102,7 +100,53 @@ function equivalentTicketTypeKeys(typeKey) {
   return [typeKey, ...legacyKeys];
 }
 
-function panelEmbed() {
+const AUTO_CONFIG_VALUE = 'auto';
+
+function encodeConfigValue(value) {
+  return value || AUTO_CONFIG_VALUE;
+}
+
+function decodeConfigValue(value) {
+  return value && value !== AUTO_CONFIG_VALUE ? value : null;
+}
+
+function buildTicketSelectCustomId({ staffRoleId, categoryId, closedCategoryId }) {
+  return [
+    'ticket_select',
+    staffRoleId || '',
+    encodeConfigValue(categoryId),
+    encodeConfigValue(closedCategoryId),
+  ].join(':');
+}
+
+function parseTicketSelectCustomId(customId) {
+  const [, staffRoleId, categoryId, closedCategoryId] = customId.split(':');
+
+  return {
+    staffRoleId: staffRoleId || process.env.STAFF_ROLE_ID,
+    categoryId: decodeConfigValue(categoryId) || process.env.TICKET_CATEGORY_ID,
+    closedCategoryId: decodeConfigValue(closedCategoryId) || process.env.CLOSED_TICKET_CATEGORY_ID,
+  };
+}
+
+function parseTicketTopic(topic, expectedKind) {
+  const [kind, ownerId, typeKey, ticketId, staffRoleId, categoryId, closedCategoryId] =
+    (topic || '').split(':');
+
+  if (expectedKind && kind !== expectedKind) return null;
+
+  return {
+    kind,
+    ownerId,
+    typeKey,
+    ticketId,
+    staffRoleId: decodeConfigValue(staffRoleId) || process.env.STAFF_ROLE_ID,
+    categoryId: decodeConfigValue(categoryId) || process.env.TICKET_CATEGORY_ID,
+    closedCategoryId: decodeConfigValue(closedCategoryId) || process.env.CLOSED_TICKET_CATEGORY_ID,
+  };
+}
+
+function panelEmbed(imageUrl = process.env.PANEL_IMAGE_URL) {
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🎫 Central de Atendimento')
@@ -122,8 +166,8 @@ function panelEmbed() {
     )
     .setFooter({ text: 'Escolha uma opção no menu abaixo.' });
 
-  if (process.env.PANEL_IMAGE_URL) {
-    embed.setImage(process.env.PANEL_IMAGE_URL);
+  if (imageUrl) {
+    embed.setImage(imageUrl);
   }
 
   return embed;
@@ -184,9 +228,9 @@ function termsEmbed() {
     );
 }
 
-function panelComponents() {
+function panelComponents(config = {}) {
   const menu = new StringSelectMenuBuilder()
-    .setCustomId('ticket_select')
+    .setCustomId(buildTicketSelectCustomId(config))
     .setPlaceholder('Selecione o assunto do ticket')
     .addOptions(
       Object.entries(ticketTypes).map(([value, type]) => ({
@@ -213,9 +257,7 @@ async function fetchInteractionGuild(interaction) {
   return interaction.client.guilds.fetch(interaction.guildId).catch(() => null);
 }
 
-async function getClosedTicketsCategory(guild, staffRoleId) {
-  const closedCategoryId = process.env.CLOSED_TICKET_CATEGORY_ID;
-
+async function getClosedTicketsCategory(guild, staffRoleId, closedCategoryId) {
   if (closedCategoryId) {
     const configuredCategory = await guild.channels.fetch(closedCategoryId).catch(() => null);
     if (configuredCategory?.type === ChannelType.GuildCategory) return configuredCategory;
@@ -288,13 +330,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      const staffRole = interaction.options.getRole('cargo_equipe', true);
+      const ticketCategory = interaction.options.getChannel('categoria_tickets', true);
+      const closedTicketCategory = interaction.options.getChannel('categoria_fechados');
+      const panelImageUrl = interaction.options.getString('imagem') || process.env.PANEL_IMAGE_URL;
+
       const panelMessage = await panelChannel.send({
-        embeds: [panelEmbed()],
-        components: panelComponents(),
+        embeds: [panelEmbed(panelImageUrl)],
+        components: panelComponents({
+          staffRoleId: staffRole.id,
+          categoryId: ticketCategory.id,
+          closedCategoryId: closedTicketCategory?.id,
+        }),
       });
 
       return interaction.reply({
-        content: `✅ Painel fixo publicado: ${panelMessage.url}`,
+        content: [
+          `✅ Painel fixo publicado: ${panelMessage.url}`,
+          `Equipe: ${staffRole}`,
+          `Categoria dos tickets: ${ticketCategory}`,
+          closedTicketCategory ? `Categoria dos fechados: ${closedTicketCategory}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -338,16 +396,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     // Seleção do tipo de ticket
-    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select') {
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('ticket_select')) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
+      const panelConfig = parseTicketSelectCustomId(interaction.customId);
       const typeKey = resolveTicketTypeKey(interaction.values[0]);
       const type = ticketTypes[typeKey];
       if (!type) return interaction.editReply('❌ Tipo de ticket inválido.');
 
       const guild = await fetchInteractionGuild(interaction);
-      const staffRoleId = process.env.STAFF_ROLE_ID;
-      const categoryId = process.env.TICKET_CATEGORY_ID;
+      const staffRoleId = panelConfig.staffRoleId;
+      const categoryId = panelConfig.categoryId;
+      const closedCategoryId = panelConfig.closedCategoryId;
 
       if (!guild) {
         return interaction.editReply(
@@ -357,7 +417,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!staffRoleId || staffRoleId === 'COLOQUE_O_ID_DO_CARGO_DA_EQUIPE') {
         return interaction.editReply(
-          '❌ O STAFF_ROLE_ID ainda não foi configurado no arquivo .env.'
+          '❌ O cargo da equipe não foi configurado neste painel. Publique um novo painel usando `/painel` e escolha o cargo da equipe.'
         );
       }
 
@@ -432,7 +492,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
             categoryId && categoryId !== 'COLOQUE_O_ID_DA_CATEGORIA_DE_TICKETS'
               ? categoryId
               : undefined,
-          topic: `ticket:${interaction.user.id}:${typeKey}:${ticketId}`,
+          topic: `ticket:${interaction.user.id}:${typeKey}:${ticketId}:${staffRoleId}:${encodeConfigValue(
+            categoryId
+          )}:${encodeConfigValue(closedCategoryId)}`,
           permissionOverwrites,
         })
         .catch((error) => {
@@ -489,10 +551,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const [, ownerId] = channel.topic.split(':');
+      const ticketInfo = parseTicketTopic(channel.topic, 'ticket');
+      const ownerId = ticketInfo?.ownerId;
+      const staffRoleId = ticketInfo?.staffRoleId;
       const isOwner = interaction.user.id === ownerId;
       const isStaff =
-        interaction.member.roles?.cache?.has(process.env.STAFF_ROLE_ID) ||
+        (staffRoleId && interaction.member.roles?.cache?.has(staffRoleId)) ||
         interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator);
 
       if (!isOwner && !isStaff) {
@@ -530,7 +594,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'ticket_delete_confirm') {
       const channel = interaction.channel;
       const guild = await fetchInteractionGuild(interaction);
-      const staffRoleId = process.env.STAFF_ROLE_ID;
 
       if (!channel?.topic?.startsWith('ticket:')) {
         return interaction.update({
@@ -539,6 +602,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      const ticketInfo = parseTicketTopic(channel.topic, 'ticket');
+      const { ownerId, typeKey, ticketId, staffRoleId, categoryId, closedCategoryId } =
+        ticketInfo || {};
+
       if (!guild || !staffRoleId) {
         return interaction.update({
           content: '❌ Não consegui acessar o servidor ou o cargo da equipe para fechar.',
@@ -546,14 +613,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const [, ownerId, typeKey, ticketId] = channel.topic.split(':');
-
       await interaction.update({
         content: '🔒 Ticket sendo fechado...',
         components: [],
       });
 
-      const closedCategory = await getClosedTicketsCategory(guild, staffRoleId);
+      const closedCategory = await getClosedTicketsCategory(guild, staffRoleId, closedCategoryId);
       const archivedName = channel.name.startsWith('fechado-')
         ? channel.name
         : `fechado-${channel.name}`.slice(0, 100);
@@ -581,7 +646,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         },
       ]);
       await channel.setName(archivedName);
-      await channel.setTopic(`closed-ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}`);
+      await channel.setTopic(
+        `closed-ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}:${staffRoleId}:${encodeConfigValue(
+          categoryId
+        )}:${encodeConfigValue(closedCategoryId)}`
+      );
 
       const reopenButton = new ButtonBuilder()
         .setCustomId('ticket_reopen')
@@ -600,10 +669,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'ticket_reopen') {
       const channel = interaction.channel;
       const guild = await fetchInteractionGuild(interaction);
-      const staffRoleId = process.env.STAFF_ROLE_ID;
-      const categoryId = process.env.TICKET_CATEGORY_ID;
+      const ticketInfo = parseTicketTopic(channel.topic, 'closed-ticket');
+      const { ownerId, typeKey, ticketId, staffRoleId, categoryId, closedCategoryId } =
+        ticketInfo || {};
       const isStaff =
-        interaction.member.roles?.cache?.has(staffRoleId) ||
+        (staffRoleId && interaction.member.roles?.cache?.has(staffRoleId)) ||
         interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator);
 
       if (!channel?.topic?.startsWith('closed-ticket:')) {
@@ -627,7 +697,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const [, ownerId, typeKey, ticketId] = channel.topic.split(':');
       const openCategory = categoryId
         ? await guild.channels.fetch(categoryId).catch(() => null)
         : null;
@@ -673,7 +742,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await channel.setName(channel.name.replace(/^fechado-/, ''));
       }
 
-      await channel.setTopic(`ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}`);
+      await channel.setTopic(
+        `ticket:${ownerId}:${typeKey || 'geral'}:${ticketId || 'sem-id'}:${staffRoleId}:${encodeConfigValue(
+          categoryId
+        )}:${encodeConfigValue(closedCategoryId)}`
+      );
       await channel.send(
         `🔓 Ticket reaberto por ${interaction.user}.${
           ticketId && ticketId !== 'sem-id' ? `\nID do Ticket: \`${ticketId}\`` : ''
@@ -698,17 +771,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Registra o comando /painel no servidor informado no .env.
-// Comando por servidor aparece praticamente na hora.
-async function registerCommands() {
+// Registra os comandos. Se GUILD_ID existir, registra no servidor informado e aparece quase na hora.
+async function registerCommands(clientId) {
   const token = process.env.DISCORD_TOKEN;
-  const clientId = process.env.CLIENT_ID;
   const guildId = process.env.GUILD_ID;
 
-  if (!token || !clientId || !guildId) {
-    console.error(
-      'Configure DISCORD_TOKEN, CLIENT_ID e GUILD_ID no arquivo .env antes de iniciar.'
-    );
+  if (!token) {
+    console.error('Configure DISCORD_TOKEN no arquivo .env antes de iniciar.');
     process.exit(1);
   }
 
@@ -719,6 +788,32 @@ async function registerCommands() {
       .setName('painel')
       .setDescription('Publica o painel para abertura de tickets.')
       .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+      .addRoleOption((option) =>
+        option
+          .setName('cargo_equipe')
+          .setDescription('Cargo que poderá ver e atender todos os tickets.')
+          .setRequired(true)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName('categoria_tickets')
+          .setDescription('Categoria onde os tickets abertos serão criados.')
+          .addChannelTypes(ChannelType.GuildCategory)
+          .setRequired(true)
+      )
+      .addChannelOption((option) =>
+        option
+          .setName('categoria_fechados')
+          .setDescription('Categoria onde tickets fechados serão guardados. Se vazio, o bot cria/procura uma.')
+          .addChannelTypes(ChannelType.GuildCategory)
+          .setRequired(false)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('imagem')
+          .setDescription('URL pública da imagem do painel. Se vazio, usa PANEL_IMAGE_URL quando existir.')
+          .setRequired(false)
+      )
       .toJSON(),
     new SlashCommandBuilder()
       .setName('terms')
@@ -729,17 +824,19 @@ async function registerCommands() {
 
   const rest = new REST({ version: '10' }).setToken(token);
 
-  await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
-    body: commands,
-  });
+  const route = guildId
+    ? Routes.applicationGuildCommands(clientId, guildId)
+    : Routes.applicationCommands(clientId);
+
+  await rest.put(route, { body: commands });
 
   console.log('Comandos /painel e /terms registrados.');
 }
 
 (async () => {
   try {
-    await registerCommands();
     await client.login(process.env.DISCORD_TOKEN);
+    await registerCommands(client.user.id);
   } catch (error) {
     console.error('Erro ao iniciar o bot:', error);
   }
