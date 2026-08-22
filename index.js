@@ -170,7 +170,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const categoryId = process.env.TICKET_CATEGORY_ID;
 
       if (!guild) {
-        return interaction.editReply('❌ Não consegui encontrar o servidor deste ticket.');
+        return interaction.editReply(
+          '❌ Não consigo acessar este servidor como bot. Reconvide o bot para o servidor com os escopos `bot` e `applications.commands`, e dê permissão para criar canais.'
+        );
       }
 
       if (!staffRoleId || staffRoleId === 'COLOQUE_O_ID_DO_CARGO_DA_EQUIPE') {
@@ -180,7 +182,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Impede que o usuário abra mais de um ticket do mesmo tipo.
-      const guildChannels = await guild.channels.fetch();
+      const guildChannels = await guild.channels.fetch().catch(() => null);
+      if (!guildChannels) {
+        return interaction.editReply(
+          '❌ Não consegui listar os canais do servidor. Verifique se o bot está no servidor e tem permissão para ver canais.'
+        );
+      }
+
       const existing = guildChannels.find(
         (channel) =>
           channel?.type === ChannelType.GuildText &&
@@ -223,16 +231,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         },
       ];
 
-      const channel = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent:
-          categoryId && categoryId !== 'COLOQUE_O_ID_DA_CATEGORIA_DE_TICKETS'
-            ? categoryId
-            : undefined,
-        topic: `ticket:${interaction.user.id}:${typeKey}`,
-        permissionOverwrites,
-      });
+      const channel = await guild.channels
+        .create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent:
+            categoryId && categoryId !== 'COLOQUE_O_ID_DA_CATEGORIA_DE_TICKETS'
+              ? categoryId
+              : undefined,
+          topic: `ticket:${interaction.user.id}:${typeKey}`,
+          permissionOverwrites,
+        })
+        .catch((error) => {
+          console.error('Erro ao criar canal de ticket:', error);
+          return null;
+        });
+
+      if (!channel) {
+        return interaction.editReply(
+          '❌ Não consegui criar o canal do ticket. Verifique se o bot tem permissão de Gerenciar Canais e acesso à categoria configurada.'
+        );
+      }
 
       const closeButton = new ButtonBuilder()
         .setCustomId('ticket_close')
