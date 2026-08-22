@@ -270,13 +270,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setFooter({ text: `Aberto por ${interaction.user.username}` })
         .setTimestamp();
 
-      await channel.send({
-        content: `${interaction.user} <@&${staffRoleId}>`,
-        embeds: [embed],
-        components: [row],
-      });
+      await interaction.editReply(`✅ Seu ticket foi criado: ${channel}`);
 
-      return interaction.editReply(`✅ Seu ticket foi criado: ${channel}`);
+      await channel
+        .send({
+          content: `${interaction.user} <@&${staffRoleId}>`,
+          embeds: [embed],
+          components: [row],
+        })
+        .catch((error) => {
+          console.error('Erro ao enviar mensagem inicial do ticket:', error);
+        });
+
+      return;
     }
 
     // Fechar ticket
