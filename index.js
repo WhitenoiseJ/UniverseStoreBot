@@ -115,6 +115,11 @@ function panelComponents() {
   return [new ActionRowBuilder().addComponents(menu)];
 }
 
+async function fetchInteractionGuild(interaction) {
+  if (!interaction.guildId) return null;
+  return interaction.guild ?? interaction.client.guilds.fetch(interaction.guildId);
+}
+
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Bot conectado como ${readyClient.user.tag}`);
   console.log('Use /painel no canal em que deseja publicar o menu de tickets.');
@@ -138,7 +143,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const panelChannel = await interaction.guild.channels.fetch(interaction.channelId);
+      const guild = await fetchInteractionGuild(interaction);
+      if (!guild) {
+        return interaction.reply({
+          content: '❌ Não consegui encontrar o servidor deste comando.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const panelChannel = await guild.channels.fetch(interaction.channelId);
       if (!panelChannel?.isTextBased() || !panelChannel.isSendable()) {
         return interaction.reply({
           content: '❌ Não consegui enviar mensagens neste canal.',
@@ -165,9 +178,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const type = ticketTypes[typeKey];
       if (!type) return interaction.editReply('❌ Tipo de ticket inválido.');
 
-      const guild = interaction.guild;
+      const guild = await fetchInteractionGuild(interaction);
       const staffRoleId = process.env.STAFF_ROLE_ID;
       const categoryId = process.env.TICKET_CATEGORY_ID;
+
+      if (!guild) {
+        return interaction.editReply('❌ Não consegui encontrar o servidor deste ticket.');
+      }
 
       if (!staffRoleId || staffRoleId === 'COLOQUE_O_ID_DO_CARGO_DA_EQUIPE') {
         return interaction.editReply(
@@ -176,9 +193,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Impede que o usuário abra mais de um ticket do mesmo tipo.
-      const existing = guild.channels.cache.find(
+      const guildChannels = await guild.channels.fetch();
+      const existing = guildChannels.find(
         (channel) =>
-          channel.type === ChannelType.GuildText &&
+          channel?.type === ChannelType.GuildText &&
           channel.topic === `ticket:${interaction.user.id}:${typeKey}`
       );
 
