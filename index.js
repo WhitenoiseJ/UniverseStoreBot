@@ -334,6 +334,132 @@ function termsEmbed(guildId) {
     );
 }
 
+function tutorialEmbeds() {
+  return [
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('📘 Tutorial — Universe Store Bot')
+      .setDescription(
+        [
+          'Oi! Este guia explica, bem simples, o que cada comando faz.',
+          '',
+          'Pense no bot como uma lojinha automática:',
+          '1. Você cria mensagens fixas, como painel e termos.',
+          '2. O cliente clica no painel.',
+          '3. O bot abre um ticket privado para atendimento.',
+          '',
+          'Os comandos abaixo são feitos para administradores do servidor.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('🎫 /painel — criar o menu de tickets')
+      .setDescription(
+        [
+          'Use este comando no canal onde o menu fixo deve aparecer.',
+          '',
+          'Exemplo:',
+          '`/painel cargo_equipe:@Equipe categoria_tickets:Tickets categoria_fechados:Tickets Fechados`',
+          '',
+          'O que escolher:',
+          '• `cargo_equipe`: o cargo dos admins/atendentes que podem ver os tickets.',
+          '• `categoria_tickets`: onde os tickets abertos vão nascer.',
+          '• `categoria_fechados`: onde os tickets fechados ficam guardados.',
+          '',
+          'Depois disso, o cliente só clica em Peds, Cenários, Suporte ou Parcerias.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('📜 /terms — publicar os termos')
+      .setDescription(
+        [
+          'Use este comando no canal onde os termos devem aparecer.',
+          '',
+          'Exemplo:',
+          '`/terms`',
+          '',
+          'Ele manda a mensagem completa dos termos da Universe Store no canal atual.',
+          'É bom usar em um canal tipo `#termos`, `#regras` ou `#informações`.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('👋 /boasvindas — configurar entrada de membros')
+      .setDescription(
+        [
+          'Use este comando para escolher onde o bot manda a mensagem quando alguém entra.',
+          '',
+          'Exemplo:',
+          '`/boasvindas canal:#boas-vindas canal_avisos:#avisos`',
+          '',
+          'Com imagem personalizada:',
+          '`/boasvindas canal:#boas-vindas canal_avisos:#avisos imagem:https://exemplo.com/imagem.png`',
+          '',
+          'Importante: para funcionar, ative o intent de membros no Developer Portal do Discord.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('🎭 /emoji-ticket — trocar emojis do painel')
+      .setDescription(
+        [
+          'Use este comando para mudar o emoji de cada opção do painel.',
+          '',
+          'Exemplos:',
+          '`/emoji-ticket opcao:Peds emoji:<:ped:123456789>`',
+          '`/emoji-ticket opcao:Suporte emoji:🛠️`',
+          '',
+          'Depois de trocar um emoji, publique o painel de novo com `/painel`.',
+          'A mensagem antiga não muda sozinha; o novo painel já sai atualizado.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('💜 /emoji-terms — trocar emojis dos termos')
+      .setDescription(
+        [
+          'Use este comando para mudar o emoji de uma parte dos termos.',
+          '',
+          'Exemplos:',
+          '`/emoji-terms secao:Pagamento emoji:<a:cartao1:1489401747553255506>`',
+          '`/emoji-terms secao:Prazo emoji:⏰`',
+          '',
+          'Depois de trocar um emoji, publique os termos de novo com `/terms`.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('🖼️ Imagens fixas')
+      .setDescription(
+        [
+          'Existem duas imagens separadas no host:',
+          '',
+          '• `PANEL_IMAGE_URL`: imagem do painel de tickets.',
+          '• `WELCOME_IMAGE_URL`: imagem da mensagem de boas-vindas.',
+          '',
+          'Você configura isso na Square Cloud, nas variáveis de ambiente.',
+          'Use links públicos, por exemplo do Imgur.',
+        ].join('\n')
+      ),
+    new EmbedBuilder()
+      .setColor(0x8A5CF6)
+      .setTitle('✅ Ordem mais fácil para configurar tudo')
+      .setDescription(
+        [
+          '1. Crie os canais e categorias no Discord.',
+          '2. Use `/boasvindas` para configurar boas-vindas.',
+          '3. Use `/terms` no canal dos termos.',
+          '4. Use `/emoji-ticket` se quiser mudar emojis do painel.',
+          '5. Use `/emoji-terms` se quiser mudar emojis dos termos.',
+          '6. Use `/painel` no canal onde os clientes vão abrir ticket.',
+          '',
+          'Prontinho. Depois disso, o cliente só precisa clicar no painel.',
+        ].join('\n')
+      ),
+  ];
+}
+
 function welcomeEmbed({ announcementsChannelId, imageUrl }) {
   const announcementsText = announcementsChannelId ? `<#${announcementsChannelId}>` : '#📢・avisos';
   const embed = new EmbedBuilder()
@@ -460,6 +586,43 @@ client.on(Events.GuildMemberAdd, async (member) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // /tutorial
+    if (interaction.isChatInputCommand() && interaction.commandName === 'tutorial') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+          content: '❌ Apenas administradores podem receber o tutorial de configuração.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const dmChannel = await interaction.user.createDM().catch(() => null);
+
+      if (!dmChannel) {
+        return interaction.reply({
+          content:
+            '❌ Não consegui te mandar mensagem no privado. Ative suas DMs deste servidor e tente `/tutorial` de novo.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const tutorialMessage = await dmChannel.send({
+        embeds: tutorialEmbeds(),
+      }).catch(() => null);
+
+      if (!tutorialMessage) {
+        return interaction.reply({
+          content:
+            '❌ Não consegui te mandar mensagem no privado. Ative suas DMs deste servidor e tente `/tutorial` de novo.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      return interaction.reply({
+        content: '✅ Te enviei o tutorial no privado.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
     // /painel
     if (interaction.isChatInputCommand() && interaction.commandName === 'painel') {
       if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
@@ -1074,6 +1237,11 @@ async function registerCommands(readyClient) {
 
   const commands = [
     new SlashCommandBuilder()
+      .setName('tutorial')
+      .setDescription('Envia no seu privado um guia simples de como usar o bot.')
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName('painel')
       .setDescription('Publica o painel para abertura de tickets.')
       .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
@@ -1191,7 +1359,7 @@ async function registerCommands(readyClient) {
   }
 
   console.log(
-    `Comandos /painel, /terms, /boasvindas, /emoji-ticket e /emoji-terms registrados em ${guildIds.length} servidor(es).`
+    `Comandos /tutorial, /painel, /terms, /boasvindas, /emoji-ticket e /emoji-terms registrados em ${guildIds.length} servidor(es).`
   );
 }
 
