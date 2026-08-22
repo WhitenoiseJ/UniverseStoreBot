@@ -509,7 +509,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const imageUrl =
         interaction.options.getString('imagem') ||
         getGuildConfig(interaction.guildId).welcome?.imageUrl ||
-        process.env.PANEL_IMAGE_URL ||
+        process.env.WELCOME_IMAGE_URL ||
         null;
 
       updateGuildConfig(interaction.guildId, {
