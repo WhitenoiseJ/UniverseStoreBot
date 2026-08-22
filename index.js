@@ -132,6 +132,21 @@ function equivalentTicketTypeKeys(typeKey) {
   return [typeKey, ...legacyKeys];
 }
 
+function getTicketEmoji(guildId, typeKey) {
+  return getGuildConfig(guildId).ticketEmojis?.[typeKey] || ticketTypes[typeKey].emoji;
+}
+
+function parseComponentEmoji(emoji) {
+  const match = emoji?.match(/^<(a?):([^:]+):(\d+)>$/);
+  if (!match) return emoji;
+
+  return {
+    animated: Boolean(match[1]),
+    name: match[2],
+    id: match[3],
+  };
+}
+
 const AUTO_CONFIG_VALUE = 'auto';
 
 function encodeConfigValue(value) {
@@ -178,7 +193,7 @@ function parseTicketTopic(topic, expectedKind) {
   };
 }
 
-function panelEmbed(imageUrl = process.env.PANEL_IMAGE_URL) {
+function panelEmbed(guildId, imageUrl = process.env.PANEL_IMAGE_URL) {
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle('🎫 Central de Atendimento')
@@ -188,10 +203,10 @@ function panelEmbed(imageUrl = process.env.PANEL_IMAGE_URL) {
         '',
         'Selecione abaixo o assunto que melhor corresponde ao seu atendimento.',
         '',
-        '🎭 **Peds** — orçamento e encomenda de PEDs.',
-        '🏙️ **Cenários** — orçamento e encomenda de cenários.',
-        '🛠️ **Suporte** — problemas, instalação e dúvidas.',
-        '🤝 **Parcerias** — propostas de parceria.',
+        `${getTicketEmoji(guildId, 'ped')} **Peds** — orçamento e encomenda de PEDs.`,
+        `${getTicketEmoji(guildId, 'cenario')} **Cenários** — orçamento e encomenda de cenários.`,
+        `${getTicketEmoji(guildId, 'suporte')} **Suporte** — problemas, instalação e dúvidas.`,
+        `${getTicketEmoji(guildId, 'parceria')} **Parcerias** — propostas de parceria.`,
         '',
         'Após selecionar uma opção, um canal privado será criado para você.',
       ].join('\n')
@@ -290,7 +305,7 @@ function panelComponents(config = {}) {
         label: type.label,
         value,
         description: type.description,
-        emoji: type.emoji,
+        emoji: parseComponentEmoji(getTicketEmoji(config.guildId, value)),
       }))
     );
 
@@ -411,11 +426,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const staffRole = interaction.options.getRole('cargo_equipe', true);
       const ticketCategory = interaction.options.getChannel('categoria_tickets', true);
       const closedTicketCategory = interaction.options.getChannel('categoria_fechados');
-      const panelImageUrl = interaction.options.getString('imagem') || process.env.PANEL_IMAGE_URL;
 
       const panelMessage = await panelChannel.send({
-        embeds: [panelEmbed(panelImageUrl)],
+        embeds: [panelEmbed(interaction.guildId)],
         components: panelComponents({
+          guildId: interaction.guildId,
           staffRoleId: staffRole.id,
           categoryId: ticketCategory.id,
           closedCategoryId: closedTicketCategory?.id,
@@ -514,6 +529,49 @@ client.on(Events.InteractionCreate, async (interaction) => {
         ]
           .filter(Boolean)
           .join('\n'),
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    // /emoji-ticket
+    if (interaction.isChatInputCommand() && interaction.commandName === 'emoji-ticket') {
+      if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+        return interaction.reply({
+          content: '❌ Apenas administradores podem configurar emojis do painel.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      if (!interaction.inGuild()) {
+        return interaction.reply({
+          content: '❌ Use este comando em um servidor.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const typeKey = interaction.options.getString('opcao', true);
+      const emoji = interaction.options.getString('emoji', true).trim();
+      const type = ticketTypes[typeKey];
+
+      if (!type) {
+        return interaction.reply({
+          content: '❌ Opção de ticket inválida.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      updateGuildConfig(interaction.guildId, {
+        ticketEmojis: {
+          ...(getGuildConfig(interaction.guildId).ticketEmojis || {}),
+          [typeKey]: emoji,
+        },
+      });
+
+      return interaction.reply({
+        content: [
+          `✅ Emoji de **${type.label}** configurado para ${emoji}.`,
+          'Publique o painel novamente com `/painel` para a mensagem fixa usar o novo emoji.',
+        ].join('\n'),
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -931,12 +989,6 @@ async function registerCommands(clientId) {
           .addChannelTypes(ChannelType.GuildCategory)
           .setRequired(false)
       )
-      .addStringOption((option) =>
-        option
-          .setName('imagem')
-          .setDescription('URL pública da imagem do painel. Se vazio, usa PANEL_IMAGE_URL quando existir.')
-          .setRequired(false)
-      )
       .toJSON(),
     new SlashCommandBuilder()
       .setName('terms')
@@ -968,6 +1020,29 @@ async function registerCommands(clientId) {
           .setRequired(false)
       )
       .toJSON(),
+    new SlashCommandBuilder()
+      .setName('emoji-ticket')
+      .setDescription('Configura o emoji de uma opção do painel de tickets.')
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+      .addStringOption((option) =>
+        option
+          .setName('opcao')
+          .setDescription('Opção do painel que receberá o emoji.')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Peds', value: 'ped' },
+            { name: 'Cenários', value: 'cenario' },
+            { name: 'Suporte', value: 'suporte' },
+            { name: 'Parcerias', value: 'parceria' }
+          )
+      )
+      .addStringOption((option) =>
+        option
+          .setName('emoji')
+          .setDescription('Emoji unicode ou personalizado. Ex: 🎭, <:nome:id> ou <a:nome:id>.')
+          .setRequired(true)
+      )
+      .toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(token);
@@ -978,7 +1053,7 @@ async function registerCommands(clientId) {
 
   await rest.put(route, { body: commands });
 
-  console.log('Comandos /painel, /terms e /boasvindas registrados.');
+  console.log('Comandos /painel, /terms, /boasvindas e /emoji-ticket registrados.');
 }
 
 (async () => {
