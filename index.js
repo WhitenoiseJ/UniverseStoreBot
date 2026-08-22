@@ -27,6 +27,7 @@ const client = new Client({
 // Depois de criar os cargos/categorias no Discord, coloque os IDs no .env.
 // STAFF_ROLE_ID = cargo que poderá ver/atender todos os tickets.
 // TICKET_CATEGORY_ID = categoria onde os tickets serão criados.
+// CLOSED_TICKET_CATEGORY_ID = opcional; categoria onde tickets fechados serão arquivados.
 
 const ticketTypes = {
   pad: {
@@ -126,6 +127,46 @@ async function fetchInteractionGuild(interaction) {
   if (!interaction.guildId) return null;
 
   return interaction.client.guilds.fetch(interaction.guildId).catch(() => null);
+}
+
+async function getClosedTicketsCategory(guild, staffRoleId) {
+  const closedCategoryId = process.env.CLOSED_TICKET_CATEGORY_ID;
+
+  if (closedCategoryId) {
+    const configuredCategory = await guild.channels.fetch(closedCategoryId).catch(() => null);
+    if (configuredCategory?.type === ChannelType.GuildCategory) return configuredCategory;
+  }
+
+  const guildChannels = await guild.channels.fetch();
+  const existingCategory = guildChannels.find(
+    (channel) =>
+      channel?.type === ChannelType.GuildCategory &&
+      channel.name.toLowerCase() === 'tickets fechados'
+  );
+
+  if (existingCategory) return existingCategory;
+
+  return guild.channels.create({
+    name: 'Tickets Fechados',
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: [
+      {
+        id: guild.roles.everyone.id,
+        deny: [PermissionsBitField.Flags.ViewChannel],
+      },
+      {
+        id: staffRoleId,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks,
+          PermissionsBitField.Flags.ManageMessages,
+        ],
+      },
+    ],
+  });
 }
 
 client.once(Events.ClientReady, (readyClient) => {
@@ -272,7 +313,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const closeButton = new ButtonBuilder()
         .setCustomId('ticket_close')
-        .setLabel('Fechar Ticket')
+        .setLabel('Arquivar Ticket')
         .setEmoji('🔒')
         .setStyle(ButtonStyle.Danger);
 
@@ -328,8 +369,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const confirm = new ButtonBuilder()
         .setCustomId('ticket_delete_confirm')
-        .setLabel('Confirmar fechamento')
-        .setEmoji('🗑️')
+        .setLabel('Confirmar arquivamento')
+        .setEmoji('📦')
         .setStyle(ButtonStyle.Danger);
 
       const cancel = new ButtonBuilder()
@@ -338,7 +379,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setStyle(ButtonStyle.Secondary);
 
       return interaction.reply({
-        content: 'Tem certeza de que deseja fechar e apagar este ticket?',
+        content: 'Tem certeza de que deseja fechar e arquivar este ticket?',
         components: [new ActionRowBuilder().addComponents(confirm, cancel)],
         flags: MessageFlags.Ephemeral,
       });
@@ -353,15 +394,60 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isButton() && interaction.customId === 'ticket_delete_confirm') {
       const channel = interaction.channel;
+      const guild = await fetchInteractionGuild(interaction);
+      const staffRoleId = process.env.STAFF_ROLE_ID;
+
+      if (!channel?.topic?.startsWith('ticket:')) {
+        return interaction.update({
+          content: '❌ Este canal não é um ticket aberto.',
+          components: [],
+        });
+      }
+
+      if (!guild || !staffRoleId) {
+        return interaction.update({
+          content: '❌ Não consegui acessar o servidor ou o cargo da equipe para arquivar.',
+          components: [],
+        });
+      }
+
+      const [, ownerId, typeKey] = channel.topic.split(':');
 
       await interaction.update({
-        content: '🔒 Ticket sendo fechado...',
+        content: '🔒 Ticket sendo arquivado...',
         components: [],
       });
 
-      setTimeout(() => {
-        channel.delete('Ticket fechado').catch(console.error);
-      }, 1500);
+      const closedCategory = await getClosedTicketsCategory(guild, staffRoleId);
+      const archivedName = channel.name.startsWith('fechado-')
+        ? channel.name
+        : `fechado-${channel.name}`.slice(0, 100);
+
+      await channel.setParent(closedCategory.id, { lockPermissions: false });
+      await channel.permissionOverwrites.set([
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+        },
+        {
+          id: ownerId,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+        },
+        {
+          id: staffRoleId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+            PermissionsBitField.Flags.AttachFiles,
+            PermissionsBitField.Flags.EmbedLinks,
+            PermissionsBitField.Flags.ManageMessages,
+          ],
+        },
+      ]);
+      await channel.setName(archivedName);
+      await channel.setTopic(`closed-ticket:${ownerId}:${typeKey || 'geral'}`);
+      await channel.send(`📦 Ticket arquivado por ${interaction.user}.`);
     }
   } catch (error) {
     console.error(error);
